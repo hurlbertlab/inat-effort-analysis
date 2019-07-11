@@ -13,6 +13,7 @@ library(zoo)
 
 One common way to standardize for effort when plotting phenology from incidental observations is to **divide the number of observations in a given day by the total number of observations** of some higher order inclusive taxonomic level. For example, if you wanted to estimate the phenology of Monarch butterflies, you would divide the number of monarch observations on each day by the total number of Lepidoptera (or Insecta, or iNaturalist) observations on that day.
 
+## A fake dataset
 However, this method of standardization may be inappropriate if the proportion of total observations made up by the focal taxa varies over time. Consider the example below, which assumes that for each species, observations (e.g. submitted to iNaturalist) are drawn from a normal distribution around that species' peak date. The overall phenology summing across ~100 species is given by the black line. Three individual species are highlighted with the earliest (red), middle (purple), and latest (blue) peak dates.
 
 ```{r, echo = FALSE, warning = FALSE, message = FALSE, fig.height = 4, fig.align = "center"}
@@ -66,6 +67,8 @@ text(180, 20, "mid sp", col = 'purple')
 
 ```
 
+## Approach 1 -- dividing by total number of observations
+
 Dividing each species by the total number of observations on a given date results in the plots below. For the purple species in the middle of this distribution, the standardized phenology looks broadly similar to the phenology of the raw observation count.
 
 However, for the early species, it makes up a large fraction of the observations early and that fraction drops off as other species become more abundant. A similar effect occurs for the late species at the end of the season. Thus, for species occurring during the overall ramp up or ramp down of activity, correcting by dividing by the total number of observations will destroy the underlying phenological signal.
@@ -86,10 +89,11 @@ abline(v = peaks[c(1, round(S/2), S)], col = c('red', 'purple', 'blue'), lty = '
 
 ```
 
+## Dealing with City Nature Challenge-like events
+
 Nevertheless, the total number of iNaturalist observations submitted on a given day does carry some potentially useful information about sampling effort. Consider the effect of the **City Nature Challenge** which greatly increases the participation of observers in iNaturalist over a 4-day weekend relative to other days of the year. 
 
 If we assume that the probability of an arthropod that is present getting submitted to iNaturalist is constant throughout the year but 50% higher during the City Nature Challenge (e.g. Apr 26-29, Julian days 116-119), the observed phenology of the underlying data in Figure 1 would look like the dark line in the figures below relative to the "truth" based on constant detectability in the dashed line.
-
 
 
 ```{r, echo = FALSE, warning = FALSE, message = FALSE, fig.height = 4, fig.width = 10, fig.align = "center"}
@@ -113,7 +117,7 @@ rect(116, -10, 119, 200, col = rgb(.05, .05, .05, .1), border = NA)
 ```
 
 Below is an example species with a true peak phenology just after the City Nature Challenge (peak on jd 121, normal curve). The dashed red line is the sample of observations from that curve, reflecting day to day variation in activity that still captures the underlying true phenology. The solid blue line represents the number of observations submitted to iNaturalist given a higher detectability during the City Nature Challenge, which increases the number of observations during that window. 
-Correcting for variation in sampling effort by dividing the number of observations of this species by the total number of observations on each day yields the dotted blue line. This line reduces the peak during the City Nature Challenge as desired, but inflates values of abundance for the species early in its phenology because the total number of observations (the denominator by which standardization occurs) changes at a different rate than the focal species during this period.
+Correcting for variation in sampling effort by dividing the number of observations of this species by the total number of observations on each day yields the dotted blue line. This line **reduces the peak during the City Nature Challenge as desired, but inflates values of abundance for the species early in its phenology** because the total number of observations (the denominator by which standardization occurs) changes at a different rate than the focal species during this period.
 
 ```{r, echo = FALSE, warning = FALSE, message = FALSE, fig.height = 4, fig.width = 7, fig.align = "center"}
 
@@ -144,9 +148,11 @@ legend("topleft", c('"truth"', 'sampled truth', 'City Nature Challenge', 'total 
 
 ```
 
-An alternative method of standardization considers the sampling effort on a given day relative to a larger window centered around that day. Here, we consider a 7 day sampling window. The number of iNaturalist observations for a given species (or group) can be adjusted by the ratio of (total # observations on that day) / (total # observations per day during the window).
+## Approach 2: effort relative to the moving average of survey effort over a broader window
 
-The figure below is identical except that instead of the correction by total number of observations as in the dotted line above, it shows the correction based on the moving window expectation of sampling effort (green line). This correction reduces the effect of the City Nature Challenge, but does not overinflate abundance values early in the phenology.
+An alternative method of standardization considers the sampling effort on a given day relative to a larger window centered around that day. Here, we consider a 31 day sampling window. The number of iNaturalist observations for a given species (or group) can be adjusted by the ratio of (total # observations on that day) / (total # observations per day during the window).
+
+The figure below is identical except that instead of the correction by total number of observations as in the dotted line above, it shows the correction based on the moving window expectation of sampling effort (green line). **This correction reduces the effect of the City Nature Challenge, but does not overinflate abundance values early in the phenology.**
 
 ``` {r, echo = FALSE, warning = FALSE, message = FALSE, fig.height = 4, fig.width = 7, fig.align = "center"}
 
