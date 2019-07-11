@@ -1,0 +1,184 @@
+---
+title: "iNaturalist effort analysis"
+author: "Allen Hurlbert"
+date: "7/10/2019"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+library(dplyr)
+library(zoo)
+```
+
+One common way to standardize for effort when plotting phenology from incidental observations is to **divide the number of observations in a given day by the total number of observations** of some higher order inclusive taxonomic level. For example, if you wanted to estimate the phenology of Monarch butterflies, you would divide the number of monarch observations on each day by the total number of Lepidoptera (or Insecta, or iNaturalist) observations on that day.
+
+However, this method of standardization may be inappropriate if the proportion of total observations made up by the focal taxa varies over time. Consider the example below, which assumes that for each species, observations (e.g. submitted to iNaturalist) are drawn from a normal distribution around that species' peak date. The overall phenology summing across ~100 species is given by the black line. Three individual species are highlighted with the earliest (red), middle (purple), and latest (blue) peak dates.
+
+```{r, echo = FALSE, warning = FALSE, message = FALSE, fig.height = 4, fig.align = "center"}
+
+# Ideal number of species
+Stot = 101
+
+# Generate peak dates for every species, with more peaks mid-year
+set.seed(14)
+peaks = round(rnorm(Stot, mean = 183, sd = 80))
+peaks = peaks[order(peaks)]
+# Eliminate peak dates that are too early or late to be meaningful
+peaks = peaks[peaks > 5 & peaks < 360]
+
+# Realized number of species with reasonable peak dates
+S = length(peaks)
+
+# Assume all species are observed some fixed number of times
+nRecsPerSpecies = 200
+
+
+# Generate data frame of Julian day occurrences by drawing from
+# normal distribution around each species' peak date
+df = data.frame(jd = 1:365)
+for (i in 1:S) {
+  
+  occs = data.frame(jd = round(rnorm(nRecsPerSpecies, peaks[i], 10))) %>% 
+    count(jd)
+  
+  df = left_join(df, occs, by = 'jd') %>%
+    mutate(n = ifelse(is.na(n), 0, n)) %>%
+    rename(!!(paste('sp',i, sep = '')) := n)
+
+}
+
+# Sum of all observations on a given Julian day
+df$totobs = rowSums(df[,2:ncol(df)])
+
+par(mar = c(4, 4, 1, 1), mgp = c(3, 1, 0))
+plot(df$jd, df$totobs, xlab = "Julian day", ylab = "No. observations", type = 'l', las = 1)
+points(df$jd[df$sp1 > 0], df$sp1[df$sp1 > 0], type = 'l', col = 'red', lwd = 3)
+points(df$jd[df[, round(1+S/2)] > 0], df[, round(1+S/2)][df[, round(1+S/2)] > 0], type = 'l', col = 'purple', lwd = 3)
+points(df$jd[df[, S + 1] > 0], df[, S + 1][df[, S + 1] > 0], type = 'l', col = 'blue', lwd = 3)
+
+obsPeakEarly = sum(df$sp1[df$sp1 > 0]*df$jd[df$sp1 > 0])/sum(df$sp1[df$sp1 > 0])
+abline(v = peaks[c(1, round(S/2), S)], col = c('red', 'purple', 'blue'), lty = 'dashed')
+text(200, .8*max(df$totobs), "total observations", adj = 0)
+text(8, 20, "early sp", col = 'red')
+text(350, 22, "late sp", col = 'blue')
+text(180, 20, "mid sp", col = 'purple')
+
+```
+
+Dividing each species by the total number of observations on a given date results in the plots below. For the purple species in the middle of this distribution, the standardized phenology looks broadly similar to the phenology of the raw observation count.
+
+However, for the early species, it makes up a large fraction of the observations early and that fraction drops off as other species become more abundant. A similar effect occurs for the late species at the end of the season. Thus, for species occurring during the overall ramp up or ramp down of activity, correcting by dividing by the total number of observations will destroy the underlying phenological signal.
+```{r, echo=FALSE, fig.height = 4, fig.align = "center"}
+
+earlyAdjusted = 100*(df$sp1/df$totobs)[df$sp1 > 0]
+
+midAdjusted = 100*(df[, round(1+S/2)]/df$totobs)[df[, round(1+S/2)] > 0]
+
+lateAdjusted = 100*(df[, S + 1]/df$totobs)[df[, S + 1] > 0]
+
+par(mar = c(4, 4, 1, 1))
+plot(df$jd[df$sp1 > 0], earlyAdjusted, xlab = "Julian day", ylab = "% of total observations", 
+     type = 'l', col = 'red', xlim = c(1, 365), ylim = c(0, 100), lwd = 3, las = 1)
+points(df$jd[df[, round(1+S/2)] > 0], midAdjusted, type = 'l', col = 'purple', lwd = 3)
+points(df$jd[df[, S + 1] > 0], lateAdjusted, type = 'l', col = 'blue', lwd = 3)
+abline(v = peaks[c(1, round(S/2), S)], col = c('red', 'purple', 'blue'), lty = 'dashed')
+
+```
+
+Nevertheless, the total number of iNaturalist observations submitted on a given day does carry some potentially useful information about sampling effort. Consider the effect of the **City Nature Challenge** which greatly increases the participation of observers in iNaturalist over a 4-day weekend relative to other days of the year. 
+
+If we assume that the probability of an arthropod that is present getting submitted to iNaturalist is constant throughout the year but 50% higher during the City Nature Challenge (e.g. Apr 26-29, Julian days 116-119), the observed phenology of the underlying data in Figure 1 would look like the dark line in the figures below relative to the "truth" based on constant detectability in the dashed line.
+
+
+
+```{r, echo = FALSE, warning = FALSE, message = FALSE, fig.height = 4, fig.width = 10, fig.align = "center"}
+detectability = rep(1, 365)
+detectability[116:119] = 1.5
+
+df$iNatObs = df$totobs*detectability
+
+par(mfrow = c(1, 2), mar = c(4,4,1,0.2), mgp = c(3, 1, 0))
+
+plot(df$jd, df$iNatObs, xlab = "Julian day", ylab = "No. observations", type = 'l', 
+     las = 1, lwd = 2, ylim = c(0, 1.1*max(df$iNatObs)))
+points(df$jd, df$totobs, type = 'l', lty = 'dashed', lwd = 2)
+
+plot(df$jd, df$iNatObs, xlab = "Julian day", ylab = "", type = 'l', 
+     las = 1, xlim = c(90, 150), lwd = 2, ylim = c(0, 1.1*max(df$iNatObs)))
+points(df$jd, df$totobs, type = 'l', lty = 'dashed', lwd = 2)
+text(128, max(df$iNatObs), "City Nature\nChallenge")
+
+rect(116, -10, 119, 200, col = rgb(.05, .05, .05, .1), border = NA)
+```
+
+Below is an example species with a true peak phenology just after the City Nature Challenge (peak on jd 121, normal curve). The dashed red line is the sample of observations from that curve, reflecting day to day variation in activity that still captures the underlying true phenology. The solid blue line represents the number of observations submitted to iNaturalist given a higher detectability during the City Nature Challenge, which increases the number of observations during that window. 
+Correcting for variation in sampling effort by dividing the number of observations of this species by the total number of observations on each day yields the dotted blue line. This line reduces the peak during the City Nature Challenge as desired, but inflates values of abundance for the species early in its phenology because the total number of observations (the denominator by which standardization occurs) changes at a different rate than the focal species during this period.
+
+```{r, echo = FALSE, warning = FALSE, message = FALSE, fig.height = 4, fig.width = 7, fig.align = "center"}
+
+# Normal distribution for sp18, "true" phenology
+sp18 = dnorm(1:365, mean = peaks[18], sd = 10)
+
+
+par(mar = c(4, 4, 0, 0), mgp = c(3, 1, 0))
+plot(df$jd[sp18 > 1e-5], sp18[sp18 > 1e-5], type = 'l', col = 'blue', xlab = "Julian day", ylab = "No. observations",
+     yaxt = "n", ylim = c(0, 1.3*max(sp18)), xlim = c(80, 150))
+
+par(new = TRUE)
+
+plot(df$jd[df$sp18 > 0], detectability[df$sp18 > 0]*df$sp18[df$sp18 > 0], type = 'l', 
+     col = 'blue', lwd = 2, xlab = "", ylab = "", xaxt = "n", yaxt = "n", las = 1, 
+     xlim = c(80, 150), ylim = c(0, 1.3*max(detectability[df$sp18 > 0]*df$sp18[df$sp18 > 0])))
+points(df$jd[df$sp18 > 0], df$sp18[df$sp18 > 0], type = 'l', col = 'red', lwd = 2, lty = 'dashed')
+
+par(new = TRUE)
+plot(df$jd[df$sp18 > 0], detectability[df$sp18 > 0]*df$sp18[df$sp18 > 0]/df$iNatObs[df$sp18 > 0], type = 'l',
+       col = 'blue', lty = 'dotted', xlab = "", ylab = "", xaxt = "n", yaxt = "n", xlim = c(80, 150), 
+     ylim = c(0, 1.3*max(df$sp18[df$sp18 > 0]/df$totobs[df$sp18 > 0])))
+
+rect(116, -10, 119, 200, col = rgb(.05, .05, .05, .1), border = NA)
+
+legend("topleft", c('"truth"', 'sampled truth', 'City Nature Challenge', 'total obs correction'), 
+       lty = c('solid', 'dashed', 'solid', 'dotted'), lwd = c(1, 2, 2, 1), col = c('blue', 'red', 'blue', 'blue'))
+
+```
+
+An alternative method of standardization considers the sampling effort on a given day relative to a larger window centered around that day. Here, we consider a 7 day sampling window. The number of iNaturalist observations for a given species (or group) can be adjusted by the ratio of (total # observations on that day) / (total # observations per day during the window).
+
+The figure below is identical except that instead of the correction by total number of observations as in the dotted line above, it shows the correction based on the moving window expectation of sampling effort (green line). This correction reduces the effect of the City Nature Challenge, but does not overinflate abundance values early in the phenology.
+
+``` {r, echo = FALSE, warning = FALSE, message = FALSE, fig.height = 4, fig.width = 7, fig.align = "center"}
+
+windowLength = 31 #make it odd
+
+jds = data.frame(jd = 1:365, 
+                 windowObs = c(df$iNatObs[1:((windowLength - 1)/2)], rollmean(df$iNatObs, windowLength), 
+                               df$iNatObs[(366 - ((windowLength - 1)/2)):365]))
+
+par(mar = c(4, 4, 0, 0), mgp = c(3, 1, 0))
+plot(df$jd[sp18 > 1e-5], sp18[sp18 > 1e-5], type = 'l', col = 'blue', xlab = "Julian day", ylab = "No. observations",
+     yaxt = "n", ylim = c(0, 1.3*max(sp18)), xlim = c(80, 150))
+
+par(new = TRUE)
+
+plot(df$jd[df$sp18 > 0], detectability[df$sp18 > 0]*df$sp18[df$sp18 > 0], type = 'l', 
+     col = 'blue', lwd = 2, xlab = "", ylab = "", xaxt = "n", yaxt = "n", las = 1, 
+     xlim = c(80, 150), ylim = c(0, 1.3*max(detectability[df$sp18 > 0]*df$sp18[df$sp18 > 0])))
+points(df$jd[df$sp18 > 0], df$sp18[df$sp18 > 0], type = 'l', col = 'red', lwd = 2, lty = 'dashed')
+
+par(new = TRUE)
+
+adjusted = detectability[df$sp18 > 0]*df$sp18[df$sp18 > 0]/(df$iNatObs[df$sp18 > 0]/jds$windowObs[df$sp18 > 0])
+
+plot(df$jd[df$sp18 > 0], adjusted, type = 'l',
+       col = 'green', lty = 'solid', xlab = "", ylab = "", xaxt = "n", yaxt = "n", xlim = c(80, 150), 
+     ylim = c(0, 1.3*max(adjusted, na.rm = TRUE)))
+
+rect(116, -10, 119, 200, col = rgb(.05, .05, .05, .1), border = NA)
+
+legend("topleft", c('"truth"', 'sampled truth', 'City Nature Challenge', 'moving window correction'), 
+       lty = c('solid', 'dashed', 'solid', 'solid'), lwd = c(1, 2, 2, 1), col = c('blue', 'red', 'blue', 'green'))
+
+
+```
